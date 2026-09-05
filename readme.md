@@ -34,6 +34,6 @@ Click the Horn Icon in the top-right corner of the frame to access the configura
 ## Installation
 
 1. Download or clone this repository.
-2. Place the `BotCommander` folder into your World of Warcraft directory under `Interface\AddOns\`.
-3. Verify the path matches: `Interface\AddOns\BotCommander\BotCommander.toc`.
+2. Place the `BotCommander` folder into your World of Warcraft directory under `Interface\AddOns\`. 
+3. Verify the path matches: `Interface\AddOns\BotCommander\`. You may need to delete `-main` from the folder name. 
 4. Launch World of Warcraft and enable **BotCommander** in your AddOn list.
