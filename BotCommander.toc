@@ -2,7 +2,7 @@
 ## Title: BotCommander
 ## Notes: Quick-Command UI for mod-playerbots
 ## Author: b-wun
-## Version: 1.0.0
+## Version: 1.1.0
 ## SavedVariables: BotCommanderDB
 
 BotCommander.lua
