@@ -1,4 +1,4 @@
-# BotCommander (v1.0.0)
+# BotCommander (v1.1.0)
 
 **BotCommander** is a lightweight command panel for World of Warcraft (3.3.5a) designed to control `mod-playerbots` with a quick-click interface while keeping your chat logs and screen clean of command spam.
 
@@ -9,14 +9,31 @@
 
 ## Features
 
-* **Smart Command Dispatcher:** Automatically routes commands to Whispers, Raid, Party, or Say based on your active target and group context.
+* **Role Modifier Shortcuts:** Hold modifier keys while clicking any command button to target specific bot roles across group channels (`/party` / `/raid`), automatically bypassing single-player targets.
+* **Header Drink Control:** Quick-click mug icon in the title bar orders resource/mana-reliant bots to sit and drink.
+* **Interactive Context Header:** Displays current target or active group role context in real time, with a built-in tooltip shortcut legend when hovered.
+* **Smart Command Dispatcher:** Automatically routes commands to Whispers, Raid, Party, or Say based on your active target, modifier keys, and group context.
 * **Quick-Command Grid:**
   * **Movement:** Follow, Stay, Flee
   * **Combat:** Attack, Pull, Pull Back (automatically clears 'Stay' state before executing)
   * **Pacing:** Pause (`co +passive`) and Unpause (`co -passive`)
   * **Recovery:** Spirit Release, Revive, and Summon
-* **Minimap & Slash Commands:** Access the panel using the draggable minimap icon or `/bc` and `/bot` slash commands.
-* **Target-Aware Display:** Dynamic header shows current command destination with class-colored player names.
+* **Minimap & Slash Commands:** Access the panel using the draggable minimap icon `/botc` slash command.
+
+---
+
+## Role Modifier Shortcuts
+
+Hold any of the following modifier key combinations when clicking a command button:
+
+| Key Combination | Target Role | Command Prefix |
+| :--- | :--- | :--- |
+| **CTRL + Click** | Tank | `@tank` |
+| **SHIFT + Click** | All DPS | `@dps` |
+| **ALT + Click** | Healers | `@heal` |
+| **CTRL + SHIFT + Click** | Melee DPS | `@meleedps` |
+| **ALT + SHIFT + Click** | Ranged DPS | `@rangeddps` |
+| **ALT + CTRL + Click** | All Ranged (Ranged DPS & Healers) | `@ranged` |
 
 ---
 
