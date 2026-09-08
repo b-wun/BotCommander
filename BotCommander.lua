@@ -374,7 +374,7 @@ dbFrame:SetScript("OnEvent", function(self, event, addonName)
         filterAddonMessages = BotCommanderDB.filterAddonMessages
         
         UpdateFilterIcon()
-        self:UnunregisterEvent("ADDON_LOADED")
+        self:UnregisterEvent("ADDON_LOADED")
     end
 end)
 
