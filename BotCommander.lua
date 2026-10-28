@@ -152,10 +152,10 @@ local function ExecuteSmartPull(mode, delaySeconds)
     delaySeconds = delaySeconds or pullDelaySeconds
     local overridePrefix = GetRolePrefix()
 
-    -- Role targets (Use explicit role tags unless user is holding a specific modifier)
-    local tankPrefix   = (overridePrefix ~= "") and overridePrefix or "@tank "
-    local dpsPrefix    = (overridePrefix ~= "") and overridePrefix or "@dps "
-    local healPrefix   = (overridePrefix ~= "") and overridePrefix or "@heal "
+    -- Always target specific roles regardless of held modifier keys
+    local tankPrefix   = "@tank "
+    local dpsPrefix    = "@dps "
+    local healPrefix   = "@heal "
 
     if mode == "pull" then
         PrintLocal(string.format("Pulling target (Tank engaging, DPS paused for %ds)...", delaySeconds))
