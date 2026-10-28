@@ -8,6 +8,9 @@ local filterMasterMessages = true -- Outgoing chat log commands sent by addon
 local filterChatBubbles = true    -- World-space speech bubbles over head
 local filterAddonMessages = false -- Local [BC] chat prints
 
+-- Default Pull Delay (Seconds)
+local pullDelaySeconds = 10
+
 -- Bot Confirmation Keywords
 local botKeywords = { "following", "fleeing", "staying" }
 
@@ -125,6 +128,95 @@ local function SendBotCommandDelayed(chatMsg, delay, overridePrefix)
     end)
 end
 
+-- Timed Sequence Runner
+local function RunCommandSequence(sequence)
+    local index = 1
+    local totalElapsed = 0
+    local timerFrame = CreateFrame("Frame")
+
+    timerFrame:SetScript("OnUpdate", function(self, elapsed)
+        totalElapsed = totalElapsed + elapsed
+        while sequence[index] and totalElapsed >= sequence[index].delay do
+            sequence[index].action()
+            index = index + 1
+        end
+
+        if index > #sequence then
+            self:SetScript("OnUpdate", nil)
+        end
+    end)
+end
+
+-- Configurable Timed Pull Handler
+local function ExecuteSmartPull(mode, delaySeconds)
+    delaySeconds = delaySeconds or pullDelaySeconds
+    local overridePrefix = GetRolePrefix()
+
+    -- Role targets (Use explicit role tags unless user is holding a specific modifier)
+    local tankPrefix   = (overridePrefix ~= "") and overridePrefix or "@tank "
+    local dpsPrefix    = (overridePrefix ~= "") and overridePrefix or "@dps "
+    local healPrefix   = (overridePrefix ~= "") and overridePrefix or "@heal "
+
+    if mode == "pull" then
+        PrintLocal(string.format("Pulling target (Tank engaging, DPS paused for %ds)...", delaySeconds))
+        
+        RunCommandSequence({
+            -- Step 1 (0.0s): Lock DPS (stay + passive) & Healer (stay only)
+            { delay = 0.0, action = function()
+                SendBotCommand("co +passive", dpsPrefix)
+                SendBotCommand("stay", dpsPrefix)
+                SendBotCommand("stay", healPrefix)
+            end },
+
+            -- Step 2 (0.2s): Release tank stay (co and nc) & command body pull
+            { delay = 0.2, action = function()
+                SendBotCommand("co -stay", tankPrefix)
+                SendBotCommand("nc -stay", tankPrefix)
+                SendBotCommandDelayed("pull", 0.1, tankPrefix)
+            end },
+
+            -- Step 3 (0.2s + delay): Unfreeze DPS & release Healer stay from both stacks
+            { delay = 0.2 + delaySeconds, action = function()
+                SendBotCommand("co -passive", dpsPrefix)
+                SendBotCommand("co -stay", dpsPrefix)
+                SendBotCommand("nc -stay", dpsPrefix)
+                SendBotCommand("co -stay", healPrefix)
+                SendBotCommand("nc -stay", healPrefix)
+                PrintLocal("Pull delay complete — DPS and Healer engaging!")
+            end }
+        })
+
+    elseif mode == "pullback" then
+        PrintLocal(string.format("Pulling back target (Range pull, DPS paused for %ds)...", delaySeconds))
+
+        RunCommandSequence({
+            -- Step 1 (0.0s): Lock DPS (stay + passive) & Healer (stay only)
+            { delay = 0.0, action = function()
+                SendBotCommand("co +passive", dpsPrefix)
+                SendBotCommand("stay", dpsPrefix)
+                SendBotCommand("stay", healPrefix)
+            end },
+
+            -- Step 2 (0.2s): Release tank stay (co and nc) & issue range pull back
+            { delay = 0.2, action = function()
+                SendBotCommand("co -stay", tankPrefix)
+                SendBotCommand("nc -stay", tankPrefix)
+                SendBotCommandDelayed("pull back", 0.1, tankPrefix)
+            end },
+
+            -- Step 3 (0.2s + delay): Unfreeze DPS & release Healer stay from both stacks
+            { delay = 0.2 + delaySeconds, action = function()
+                SendBotCommand("co -passive", dpsPrefix)
+                SendBotCommand("co -stay", dpsPrefix)
+                SendBotCommand("nc -stay", dpsPrefix)
+                SendBotCommand("co -stay", healPrefix)
+                SendBotCommand("nc -stay", healPrefix)
+                PrintLocal("Pull Back delay complete — DPS and Healer engaging!")
+            end }
+        })
+    end
+end
+
 -- Target Name Formatter
 local function GetFormattedTargetName()
     if not UnitExists("target") then return "target" end
@@ -169,7 +261,7 @@ end
 -- ============================================================================
 
 local frame = CreateFrame("Frame", "BotCommanderFrame", UIParent)
-frame:SetSize(250, 150)
+frame:SetSize(250, 180) -- Increased height slightly for timer input field
 frame:SetPoint("CENTER", 0, 0)
 frame:SetBackdrop({
     bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
@@ -367,6 +459,7 @@ dbFrame:SetScript("OnEvent", function(self, event, addonName)
         if BotCommanderDB.filterMasterMessages == nil then BotCommanderDB.filterMasterMessages = true end
         if BotCommanderDB.filterChatBubbles == nil then BotCommanderDB.filterChatBubbles = true end
         if BotCommanderDB.filterAddonMessages == nil then BotCommanderDB.filterAddonMessages = false end
+        if BotCommanderDB.pullDelaySeconds ~= nil then pullDelaySeconds = BotCommanderDB.pullDelaySeconds end
 
         filterBotResponses = BotCommanderDB.filterBotResponses
         filterMasterMessages = BotCommanderDB.filterMasterMessages
@@ -476,7 +569,7 @@ bubbleScanner:SetScript("OnUpdate", function(self, elapsed)
 end)
 
 -- ============================================================================
--- 5. COMMAND BUTTONS (Grid Layout)
+-- 5. COMMAND BUTTONS & CONTROLS (Grid Layout)
 -- ============================================================================
 
 local col1 = 12       -- Left column X
@@ -511,51 +604,72 @@ end)
 CreateGridButton(frame, "Attack", col1, -58, btnW3, function(self)
     local prefix = GetRolePrefix()
     PrintLocal(prefix .. "Attack " .. GetFormattedTargetName() .. " (Clearing Stay)")
-    SendBotCommand("follow", prefix)
-    SendBotCommandDelayed("attack", 0.3, prefix)
+    SendBotCommand("co -stay", prefix)
+    SendBotCommand("nc -stay", prefix)
+    SendBotCommandDelayed("attack", 0.1, prefix)
 end)
 
 CreateGridButton(frame, "Pull", col2, -58, btnW3, function(self)
-    local prefix = GetRolePrefix()
-    PrintLocal(prefix .. "Pull " .. GetFormattedTargetName() .. " (Clearing Stay)")
-    SendBotCommand("follow", prefix)
-    SendBotCommandDelayed("pull", 0.3, prefix)
+    ExecuteSmartPull("pull", pullDelaySeconds)
 end)
 
 CreateGridButton(frame, "Pull Back", col3, -58, btnW3, function(self)
-    local prefix = GetRolePrefix()
-    PrintLocal(prefix .. "Pull back from " .. GetFormattedTargetName() .. " (Clearing Stay)")
-    SendBotCommand("follow", prefix)
-    SendBotCommandDelayed("pull back", 0.3, prefix)
+    ExecuteSmartPull("pullback", pullDelaySeconds)
 end)
 
--- Row 3: Pause, Unpause (Y: -86)
-CreateGridButton(frame, "Pause", hCol1, -86, btnW2, function(self)
+-- Row 3: Configurable Pull Timer Input (Y: -86)
+local timerLabel = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+timerLabel:SetPoint("TOPLEFT", frame, "TOPLEFT", 14, -91)
+timerLabel:SetText("Pull DPS Delay (s):")
+
+local timerEditBox = CreateFrame("EditBox", "BotCommanderTimerBox", frame, "InputBoxTemplate")
+timerEditBox:SetSize(35, 18)
+timerEditBox:SetPoint("LEFT", timerLabel, "RIGHT", 10, 0)
+timerEditBox:SetAutoFocus(false)
+timerEditBox:SetNumber(pullDelaySeconds)
+timerEditBox:SetMaxLetters(3)
+
+timerEditBox:SetScript("OnTextChanged", function(self)
+    local val = tonumber(self:GetText())
+    if val and val >= 0 then
+        pullDelaySeconds = val
+        if BotCommanderDB then
+            BotCommanderDB.pullDelaySeconds = val
+        end
+    end
+end)
+
+timerEditBox:SetScript("OnEnterPressed", function(self)
+    self:ClearFocus()
+end)
+
+-- Row 4: Pause, Unpause (Y: -114)
+CreateGridButton(frame, "Pause", hCol1, -114, btnW2, function(self)
     local prefix = GetRolePrefix()
     PrintLocal(prefix .. "Pause (Strategy: +passive)")
     SendBotCommand("co +passive", prefix)
 end)
 
-CreateGridButton(frame, "Unpause", hCol2, -86, btnW2, function(self)
+CreateGridButton(frame, "Unpause", hCol2, -114, btnW2, function(self)
     local prefix = GetRolePrefix()
     PrintLocal(prefix .. "Unpause (Strategy: -passive)")
     SendBotCommand("co -passive", prefix)
 end)
 
--- Row 4: Emergency Recovery (Y: -114)
-CreateGridButton(frame, "Release", col1, -114, btnW3, function(self)
+-- Row 5: Emergency Recovery (Y: -142)
+CreateGridButton(frame, "Release", col1, -142, btnW3, function(self)
     local prefix = GetRolePrefix()
     PrintLocal(prefix .. "Releasing bot spirits")
     SendBotCommand("release", prefix)
 end)
 
-CreateGridButton(frame, "Revive", col2, -114, btnW3, function(self)
+CreateGridButton(frame, "Revive", col2, -142, btnW3, function(self)
     local prefix = GetRolePrefix()
     PrintLocal(prefix .. "Reviving dead bots")
     SendBotCommand("revive", prefix)
 end)
 
-CreateGridButton(frame, "Summon", col3, -114, btnW3, function(self)
+CreateGridButton(frame, "Summon", col3, -142, btnW3, function(self)
     local prefix = GetRolePrefix()
     PrintLocal(prefix .. "Summoning bots to location")
     SendBotCommand("summon", prefix)
@@ -566,11 +680,21 @@ end)
 -- ============================================================================
 
 SLASH_BOTCOMMANDER1 = "/botc"
-SlashCmdList["BOTCOMMANDER"] = function()
-    if frame:IsShown() then
-        frame:Hide()
+SlashCmdList["BOTCOMMANDER"] = function(msg)
+    local cmd, arg = string.match(msg or "", "^(%S+)%s*(%d*)")
+    cmd = cmd and string.lower(cmd) or ""
+    local timer = tonumber(arg) or pullDelaySeconds
+
+    if cmd == "pull" then
+        ExecuteSmartPull("pull", timer)
+    elseif cmd == "pullback" or cmd == "pb" then
+        ExecuteSmartPull("pullback", timer)
     else
-        frame:Show()
+        if frame:IsShown() then
+            frame:Hide()
+        else
+            frame:Show()
+        end
     end
 end
 
