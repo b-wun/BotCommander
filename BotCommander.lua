@@ -147,71 +147,70 @@ local function RunCommandSequence(sequence)
     end)
 end
 
--- Configurable Timed Pull Handler
+-- Smart Engage Helper: Follow natively clears passive/stay and resets movement engine
+local function ExecuteSmartEngage(rolePrefix)
+    SendBotCommand("follow", rolePrefix)
+end
+
+-- Configurable Timed Pull Handler (Staggered Setup + Isolated Role Releases)
 local function ExecuteSmartPull(mode, delaySeconds)
     delaySeconds = delaySeconds or pullDelaySeconds
-    local overridePrefix = GetRolePrefix()
 
-    -- Always target specific roles regardless of held modifier keys
-    local tankPrefix   = "@tank "
-    local dpsPrefix    = "@dps "
-    local healPrefix   = "@heal "
+    local tankPrefix = "@tank "
+    local dpsPrefix  = "@dps "
+    local healPrefix = "@heal "
 
     if mode == "pull" then
         PrintLocal(string.format("Pulling target (Tank engaging, DPS paused for %ds)...", delaySeconds))
         
-        RunCommandSequence({
-            -- Step 1 (0.0s): Lock DPS (stay + passive) & Healer (stay only)
-            { delay = 0.0, action = function()
-                SendBotCommand("co +passive", dpsPrefix)
-                SendBotCommand("stay", dpsPrefix)
-                SendBotCommand("stay", healPrefix)
-            end },
+        -- Step 1 (0.0s): Send stay first
+        SendBotCommand("stay", dpsPrefix)
 
-            -- Step 2 (0.2s): Release tank stay (co and nc) & command body pull
-            { delay = 0.2, action = function()
+        -- Step 2: Stagger passive application & tank body pull
+        RunCommandSequence({
+            { delay = 0.1, action = function()
+                SendBotCommand("nc +passive", dpsPrefix)
+                SendBotCommand("co +passive", dpsPrefix)
+            end },
+            { delay = 0.3, action = function()
                 SendBotCommand("co -stay", tankPrefix)
                 SendBotCommand("nc -stay", tankPrefix)
                 SendBotCommandDelayed("pull", 0.1, tankPrefix)
             end },
 
-            -- Step 3 (0.2s + delay): Unfreeze DPS & release Healer stay from both stacks
-            { delay = 0.2 + delaySeconds, action = function()
-                SendBotCommand("co -passive", dpsPrefix)
-                SendBotCommand("co -stay", dpsPrefix)
-                SendBotCommand("nc -stay", dpsPrefix)
-                SendBotCommand("co -stay", healPrefix)
-                SendBotCommand("nc -stay", healPrefix)
-                PrintLocal("Pull delay complete — DPS and Healer engaging!")
+            -- Step 3 (0.3s + delay): Follow clears stay/passive and releases DPS
+            { delay = 0.3 + delaySeconds, action = function()
+                ExecuteSmartEngage(dpsPrefix)
+                PrintLocal("Pull delay complete — DPS engaging!")
             end }
         })
 
     elseif mode == "pullback" then
-        PrintLocal(string.format("Pulling back target (Range pull, DPS paused for %ds)...", delaySeconds))
+        PrintLocal(string.format("Pulling back target (Range pull, all non-tanks paused for %ds)...", delaySeconds))
 
+        -- Step 1 (0.0s): Send stay to DPS and Healers
+        SendBotCommand("stay", dpsPrefix)
+        SendBotCommand("stay", healPrefix)
+
+        -- Step 2: Stagger passive application & tank range pull back
         RunCommandSequence({
-            -- Step 1 (0.0s): Lock DPS (stay + passive) & Healer (stay only)
-            { delay = 0.0, action = function()
+            { delay = 0.1, action = function()
+                SendBotCommand("nc +passive", dpsPrefix)
                 SendBotCommand("co +passive", dpsPrefix)
-                SendBotCommand("stay", dpsPrefix)
-                SendBotCommand("stay", healPrefix)
+                SendBotCommand("nc +passive", healPrefix)
+                SendBotCommand("co +passive", healPrefix)
             end },
-
-            -- Step 2 (0.2s): Release tank stay (co and nc) & issue range pull back
-            { delay = 0.2, action = function()
+            { delay = 0.3, action = function()
                 SendBotCommand("co -stay", tankPrefix)
                 SendBotCommand("nc -stay", tankPrefix)
                 SendBotCommandDelayed("pull back", 0.1, tankPrefix)
             end },
 
-            -- Step 3 (0.2s + delay): Unfreeze DPS & release Healer stay from both stacks
-            { delay = 0.2 + delaySeconds, action = function()
-                SendBotCommand("co -passive", dpsPrefix)
-                SendBotCommand("co -stay", dpsPrefix)
-                SendBotCommand("nc -stay", dpsPrefix)
-                SendBotCommand("co -stay", healPrefix)
-                SendBotCommand("nc -stay", healPrefix)
-                PrintLocal("Pull Back delay complete — DPS and Healer engaging!")
+            -- Step 3 (0.3s + delay): Follow clears stay/passive and releases DPS/Healers
+            { delay = 0.3 + delaySeconds, action = function()
+                ExecuteSmartEngage(dpsPrefix)
+                ExecuteSmartEngage(healPrefix)
+                PrintLocal("Pull Back delay complete — group engaging!")
             end }
         })
     end
@@ -261,7 +260,7 @@ end
 -- ============================================================================
 
 local frame = CreateFrame("Frame", "BotCommanderFrame", UIParent)
-frame:SetSize(250, 180) -- Increased height slightly for timer input field
+frame:SetSize(250, 180)
 frame:SetPoint("CENTER", 0, 0)
 frame:SetBackdrop({
     bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
@@ -313,7 +312,6 @@ local function UpdateTargetStatus()
     local prefix, roleLabel = GetRoleInfo()
     local prefixStr = (roleLabel ~= "") and ("|cffffd100" .. roleLabel .. "|r ") or ""
 
-    -- If NO modifier is held, default to individual target whisper if valid
     if prefix == "" and UnitExists("target") and UnitIsPlayer("target") and UnitIsFriend("player", "target") and not UnitIsUnit("target", "player") then
         local targetName = UnitName("target")
         local _, classFileName = UnitClass("target")
@@ -325,7 +323,6 @@ local function UpdateTargetStatus()
         end
         
         statusText:SetText("|c" .. colorStr .. targetName .. "|r")
-    -- If a modifier IS held (or no valid target exists), display group broadcast context
     elseif GetNumRaidMembers() > 0 then
         statusText:SetText(prefixStr .. "|cffff7f00Raid|r")
     elseif GetNumPartyMembers() > 0 then
@@ -340,7 +337,7 @@ local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("PLAYER_TARGET_CHANGED")
 eventFrame:RegisterEvent("PARTY_MEMBERS_CHANGED")
 eventFrame:RegisterEvent("RAID_ROSTER_UPDATE")
-eventFrame:RegisterEvent("MODIFIER_STATE_CHANGED") -- Live modifier key detection
+eventFrame:RegisterEvent("MODIFIER_STATE_CHANGED")
 eventFrame:SetScript("OnEvent", UpdateTargetStatus)
 UpdateTargetStatus()
 
@@ -603,10 +600,8 @@ end)
 -- Row 2: Attack, Pull, Pull Back (Y: -58)
 CreateGridButton(frame, "Attack", col1, -58, btnW3, function(self)
     local prefix = GetRolePrefix()
-    PrintLocal(prefix .. "Attack " .. GetFormattedTargetName() .. " (Clearing Stay)")
-    SendBotCommand("co -stay", prefix)
-    SendBotCommand("nc -stay", prefix)
-    SendBotCommandDelayed("attack", 0.1, prefix)
+    PrintLocal(prefix .. "Attack " .. GetFormattedTargetName())
+    SendBotCommand("attack", prefix)
 end)
 
 CreateGridButton(frame, "Pull", col2, -58, btnW3, function(self)
@@ -647,12 +642,14 @@ end)
 CreateGridButton(frame, "Pause", hCol1, -114, btnW2, function(self)
     local prefix = GetRolePrefix()
     PrintLocal(prefix .. "Pause (Strategy: +passive)")
+    SendBotCommand("nc +passive", prefix)
     SendBotCommand("co +passive", prefix)
 end)
 
 CreateGridButton(frame, "Unpause", hCol2, -114, btnW2, function(self)
     local prefix = GetRolePrefix()
     PrintLocal(prefix .. "Unpause (Strategy: -passive)")
+    SendBotCommand("nc -passive", prefix)
     SendBotCommand("co -passive", prefix)
 end)
 
