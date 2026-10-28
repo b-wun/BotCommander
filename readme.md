@@ -1,4 +1,4 @@
-# BotCommander (v1.1.0)
+# BotCommander (v1.1.1)
 
 **BotCommander** is a lightweight command panel for World of Warcraft (3.3.5a) designed to control `mod-playerbots` with a quick-click interface while keeping your chat logs and screen clean of command spam.
 
